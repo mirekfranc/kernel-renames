@@ -8,7 +8,7 @@ CMD = f'log --oneline --raw --no-merges'
 BRANCHES_CONF = 'https://kerncvs.suse.de/branches.conf'
 BRANCH_BLACKLIST = ['vanilla', 'linux-next']
 DB_NAME = 'changes.sqlite'
-BIG_BANG = '1da177e4c3f4'
+BIG_BANG = '1da177e4c3f41524e886b7f1b8a0c1fc7321cac2'
 BLACKLIST = 'Dell Inc.,XPS 13 9300' # weird file with spaces nobody gives a fig about
 
 # db ###########################################################################
@@ -125,7 +125,7 @@ def between(begin, end, lrepo, lpath):
     res = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
     hash = None
     for l in res.stdout.decode('utf-8', 'ignore').split('\n'):
-        if not l or l.startswith(BIG_BANG):
+        if not l or l.startswith(BIG_BANG[:12]):
             break
         if BLACKLIST in l:
             continue
@@ -230,6 +230,16 @@ def get_commits_per_branch(branches, krepo, lrepo):
             print('#', b, e, file=sys.stderr)
     return ret
 
+def fetch_root_tree_files(lrepo):
+    tree_index = git.Index()
+    try:
+        tree_index.read_tree(lrepo.revparse_single(BIG_BANG).tree)
+    except Exception as e:
+        print(color_format(T_RED, f'branch {branch} probably does not exist: {e}'), file=sys.stderr)
+        sys.exit(1)
+    store_files_into_db([ (e.path,) for e in tree_index ])
+    store_changes_into_db([ (BIG_BANG, None, None, e.path, None) for e in tree_index ])
+
 def prepare_tags_for_parallel_partition(uniq_tags):
     return [('', uniq_tags[0])] + [ (f, s) for f, s in zip(uniq_tags, uniq_tags[1:]) ]
 
@@ -251,6 +261,8 @@ def main():
     if not lpath:
         print("Cannot get LINUX_GIT", file=sys.stderr)
     lrepo = git.Repository(lpath)
+
+    fetch_root_tree_files(lrepo)
 
     tags = get_tags_from_ksource_tree(branches, krepo)
 
