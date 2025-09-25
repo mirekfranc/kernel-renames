@@ -17,7 +17,12 @@ def create_db():
     with sqlite3.connect(DB_NAME) as conn:
         conn.execute('PRAGMA foreign_keys = ON')
         conn.executescript('''
-        CREATE TABLE IF NOT EXISTS branches (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL, tag_id INTEGER NOT NULL, FOREIGN KEY (tag_id) REFERENCES tags(id));
+        CREATE TABLE IF NOT EXISTS branches (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT UNIQUE NOT NULL,
+        tag_id INTEGER NOT NULL,
+        FOREIGN KEY (tag_id) REFERENCES tags(id)
+        );
 
         CREATE TABLE IF NOT EXISTS tags (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL);
 
