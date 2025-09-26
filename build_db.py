@@ -2,6 +2,7 @@
 import requests, os, sys, re, subprocess, sqlite3
 import pygit2 as git
 from itertools import groupby, chain
+from concurrent.futures import ProcessPoolExecutor, as_completed
 
 HASH_PATTERN = re.compile(r"Git-commit:[ \t]*([0-9a-f]{9,40})[ \t]*")
 CMD = f'log --oneline --raw --no-merges'
@@ -113,7 +114,7 @@ def get_renames_with_score_or_none(l):
 def get_hash(l, repo):
     return repo.revparse_single(l.split(' ')[0]).id
 
-def between(begin, end, lrepo, lpath):
+def between(begin, end, lpath):
     many = []
     core_cmd = f'git -C {lpath} ' + CMD
     if begin:
@@ -123,6 +124,7 @@ def between(begin, end, lrepo, lpath):
     # debug
     print(cmd)
     res = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+    lrepo = git.Repository(lpath)
     hash = None
     for l in res.stdout.decode('utf-8', 'ignore').split('\n'):
         if not l or l.startswith(BIG_BANG[:12]):
@@ -142,8 +144,7 @@ def between(begin, end, lrepo, lpath):
     filesx = [f for _, _, f, _, _ in many if f ]
     filesy = [f for _, _, _, f, _ in many ]
     files = [(f,) for f, _ in groupby(chain(filesx, filesy))]
-    store_files_into_db(files)
-    store_changes_into_db(many)
+    return (files, many)
 
 # get tags and branches ########################################################
 
@@ -261,7 +262,6 @@ def main():
     if not lpath:
         print("Cannot get LINUX_GIT", file=sys.stderr)
     lrepo = git.Repository(lpath)
-
     fetch_root_tree_files(lrepo)
 
     tags = get_tags_from_ksource_tree(branches, krepo)
@@ -275,9 +275,12 @@ def main():
 
     tag_pairs = prepare_tags_for_parallel_partition(uniq_tags)
 
-    # TODO: make parallel
-    for tp in tag_pairs:
-        between(tp[0], tp[1], lrepo, lpath)
+    with ProcessPoolExecutor() as executor:
+        futures = { executor.submit(between, first, second, lpath) for first, second in tag_pairs }
+        for f in as_completed(futures):
+            files, many = f.result()
+            store_files_into_db(files)
+            store_changes_into_db(many)
 
     commits_per_branch = get_commits_per_branch(branches, krepo, lrepo)
     commits = get_commits()
