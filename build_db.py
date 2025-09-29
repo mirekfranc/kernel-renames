@@ -44,7 +44,7 @@ def create_db():
         score INTEGER,
         commit_id INTEGER NOT NULL,
         from_id INTEGER,
-        to_id INTEGER NOT NULL,
+        to_id INTEGER,
         tag_id INTEGER,
         FOREIGN KEY (commit_id) REFERENCES commits(id),
         FOREIGN KEY (from_id) REFERENCES files(id),
@@ -108,7 +108,9 @@ def get_renames_with_score_or_none(l):
     if rr[0].startswith('R'):
         return (rr[0], rr[1], rr[2])
     if rr[0].startswith('A'):
-        return rr[1]
+        return ('add', rr[1])
+    if rr[0].startswith('D'):
+        return ('del', rr[1])
     return None
 
 def get_hash(l, repo):
@@ -135,8 +137,11 @@ def between(begin, end, lpath):
             r = get_renames_with_score_or_none(l)
             if r and len(r) == 3:
                 many.append((str(hash), int(r[0][1:]), r[1], r[2], end))
-            elif r:
-                many.append((str(hash), None, None, r, end))
+            elif r and len(r) == 2:
+                if r[0] == 'add':
+                    many.append((str(hash), None, None, r[1], end))
+                elif r[0] == 'del':
+                    many.append((str(hash), None, r[1], None, end))
         else:
             hash = get_hash(l, lrepo)
     commits = {(h,) for h, _, _, _, _ in many }
