@@ -247,6 +247,7 @@ def prepare_tags_for_parallel_partition(uniq_tags):
 # main function ################################################################
 
 def main():
+    os.rename(DB_NAME, DB_NAME + '.OLD')
     create_db()
 
     branches_conf = fetch_branches_conf()
