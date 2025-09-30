@@ -68,7 +68,7 @@ def get_commits():
 
 def store_tags_into_db(uniq_tags):
     many = [(t,) for t in uniq_tags]
-    query = 'insert or ignore into tags (name) VALUES (?)'
+    query = 'insert into tags (name) VALUES (?)'
     store_array_into_db(query, many)
 
 def store_branches_into_db(tags):
@@ -77,7 +77,7 @@ def store_branches_into_db(tags):
     store_array_into_db(query, many)
 
 def store_commits_into_db(many):
-    query = 'insert or ignore into commits (name) VALUES (?)'
+    query = 'insert into commits (name) VALUES (?)'
     store_array_into_db(query, many)
 
 def store_files_into_db(many):
@@ -252,7 +252,7 @@ def prepare_tags_for_parallel_partition(uniq_tags):
 # main function ################################################################
 
 def main():
-    os.rename(DB_NAME, DB_NAME + '.OLD')
+    os.path.isfile(DB_NAME) and os.rename(DB_NAME, DB_NAME + '.OLD')
     create_db()
 
     branches_conf = fetch_branches_conf()
