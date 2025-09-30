@@ -85,7 +85,7 @@ def store_files_into_db(many):
     store_array_into_db(query, many)
 
 def store_changes_into_db(many):
-    query = '''insert or ignore into changes (commit_id, score, from_id, to_id, tag_id) VALUES (
+    query = '''insert into changes (commit_id, score, from_id, to_id, tag_id) VALUES (
     (select id from commits where name = ?),
     ?,
     (select id from files where name = ?),
@@ -244,6 +244,7 @@ def fetch_root_tree_files(lrepo):
         print(color_format(T_RED, f'branch {branch} probably does not exist: {e}'), file=sys.stderr)
         sys.exit(1)
     store_files_into_db([ (e.path,) for e in tree_index ])
+    store_commits_into_db([(BIG_BANG,)])
     store_changes_into_db([ (BIG_BANG, None, None, e.path, None) for e in tree_index ])
 
 def prepare_tags_for_parallel_partition(uniq_tags):
