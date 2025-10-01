@@ -51,6 +51,34 @@ def create_db():
         FOREIGN KEY (to_id) REFERENCES files(id),
         FOREIGN KEY (tag_id) REFERENCES tags(id)
         );
+
+        CREATE VIEW IF NOT EXISTS base_added AS
+        SELECT b.name AS branch, f.name AS file, ci.name AS sha
+        FROM files f
+        JOIN changes ch ON ch.to_id = f.id AND ch.from_id IS NULL
+        JOIN commits ci ON ci.id = ch.commit_id
+        JOIN tags t ON t.id = ch.tag_id
+        JOIN branches b ON b.id = t.id
+        ;
+
+        CREATE VIEW IF NOT EXISTS base_renamed AS
+        SELECT b.name AS branch, f.name AS file, nf.name AS new_file, ci.name AS sha
+        FROM files f
+        JOIN changes ch ON ch.to_id IS NOT NULL AND ch.from_id = f.id
+        JOIN files nf ON ch.to_id = nf.id
+        JOIN commits ci ON ci.id = ch.commit_id
+        JOIN tags t ON t.id = ch.tag_id
+        JOIN branches b ON b.id = t.id
+        ;
+
+        CREATE VIEW IF NOT EXISTS base_removed AS
+        SELECT b.name AS branch, f.name AS file, ci.name AS sha
+        FROM files f
+        JOIN changes ch ON ch.to_id IS NULL AND ch.from_id = f.id
+        JOIN commits ci ON ci.id = ch.commit_id
+        JOIN tags t ON t.id = ch.tag_id
+        JOIN branches b ON b.id = t.id
+        ;
         ''')
 
 def store_array_into_db(query, array):
@@ -296,14 +324,4 @@ def main():
         backports = [(h, branch) for h in hashes if h in commits ]
         store_backports_into_db(backports)
 
-################################################################################
-
 main()
-
-# renames should run in parallel for each pair to extract the list of renames
-
-# we need to query by name_from, name_to and branch (SUSE_branch)
-# suse branch should have associated a list of upstream tags for the branch lookup
-
-# problem
-# file can appear or get renamed, this should be queried to (so that we know when the file appeared)
