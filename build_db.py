@@ -79,6 +79,34 @@ def create_db():
         JOIN tags t ON t.id = ch.tag_id
         JOIN branches b ON b.id = t.id
         ;
+
+        CREATE VIEW backports_added AS
+        SELECT b.name AS branch, f.name AS file, ci.name AS sha
+        FROM backports bp
+        JOIN branches b ON b.id = bp.branch_id
+        JOIN changes ch ON ch.commit_id = bp.commit_id
+        JOIN commits ci ON ci.id = ch.commit_id
+        JOIN files f ON f.id = ch.from_id AND ch.to_id IS NULL
+        ;
+
+        CREATE VIEW backports_renamed AS
+        SELECT b.name AS branch, f.name AS file, nf.name AS new_file, ci.name AS sha
+        FROM backports bp
+        JOIN branches b ON b.id = bp.branch_id
+        JOIN changes ch ON ch.commit_id = bp.commit_id
+        JOIN commits ci ON ci.id = ch.commit_id
+        JOIN files f ON f.id = ch.from_id AND ch.to_id IS NOT NULL
+        JOIN files nf ON ch.to_add = nf.id
+        ;
+
+        CREATE VIEW backports_removed AS
+        SELECT b.name AS branch, f.name AS file, ci.name AS sha
+        FROM backports bp
+        JOIN branches b ON b.id = bp.branch_id
+        JOIN changes ch ON ch.commit_id = bp.commit_id
+        JOIN commits ci ON ci.id = ch.commit_id
+        JOIN files f ON f.id = ch.from_id AND ch.to_id IS NULL
+        ;
         ''')
 
 def store_array_into_db(query, array):
