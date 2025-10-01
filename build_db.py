@@ -148,7 +148,7 @@ def between(begin, end, lpath):
     store_commits_into_db(list(commits))
     filesx = [f for _, _, f, _, _ in many if f ]
     filesy = [f for _, _, _, f, _ in many ]
-    files = [(f,) for f, _ in groupby(chain(filesx, filesy))]
+    files = {(f,) for f, _ in groupby(chain(filesx, filesy))}
     return (files, many)
 
 # get tags and branches ########################################################
@@ -236,7 +236,7 @@ def get_commits_per_branch(branches, krepo, lrepo):
             print('#', b, e, file=sys.stderr)
     return ret
 
-def fetch_root_tree_files(lrepo):
+def fetch_root_tree_files(lrepo, tag):
     tree_index = git.Index()
     try:
         tree_index.read_tree(lrepo.revparse_single(BIG_BANG).tree)
@@ -245,7 +245,7 @@ def fetch_root_tree_files(lrepo):
         sys.exit(1)
     store_files_into_db([ (e.path,) for e in tree_index ])
     store_commits_into_db([(BIG_BANG,)])
-    store_changes_into_db([ (BIG_BANG, None, None, e.path, None) for e in tree_index ])
+    store_changes_into_db([ (BIG_BANG, None, None, e.path, tag) for e in tree_index ])
 
 def prepare_tags_for_parallel_partition(uniq_tags):
     return [('', uniq_tags[0])] + [ (f, s) for f, s in zip(uniq_tags, uniq_tags[1:]) ]
@@ -265,20 +265,21 @@ def main():
     if not kpath:
         print("Cannot get KSOURCE_GIT", file=sys.stderr)
     krepo = git.Repository(kpath)
-    lpath = os.getenv('LINUX_GIT', None)
-    if not lpath:
-        print("Cannot get LINUX_GIT", file=sys.stderr)
-    lrepo = git.Repository(lpath)
-    fetch_root_tree_files(lrepo)
-
     tags = get_tags_from_ksource_tree(branches, krepo)
 
     pure_tags = sorted([ tags[k] for k in tags.keys() ], key=key_function)
     pure_tags = [ 'v' + p for p in pure_tags ]
-    uniq_tags = [ t for t, _ in groupby(pure_tags) ] + ['master']
+    uniq_tags = [ t for t, _ in groupby(pure_tags) ]
 
     store_tags_into_db(uniq_tags)
+    uniq_tags.append('master')
     store_branches_into_db(tags)
+
+    lpath = os.getenv('LINUX_GIT', None)
+    if not lpath:
+        print("Cannot get LINUX_GIT", file=sys.stderr)
+    lrepo = git.Repository(lpath)
+    fetch_root_tree_files(lrepo, uniq_tags[0])
 
     tag_pairs = prepare_tags_for_parallel_partition(uniq_tags)
 
