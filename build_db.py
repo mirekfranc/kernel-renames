@@ -80,7 +80,7 @@ def create_db():
         JOIN branches b ON b.tag_id = t.id
         ;
 
-        CREATE VIEW backports_added AS
+        CREATE VIEW IF NOT EXISTS backports_added AS
         SELECT b.name AS branch, f.name AS file, ci.name AS sha
         FROM backports bp
         JOIN branches b ON b.id = bp.branch_id
@@ -89,7 +89,7 @@ def create_db():
         JOIN files f ON f.id = ch.from_id AND ch.to_id IS NULL
         ;
 
-        CREATE VIEW backports_renamed AS
+        CREATE VIEW IF NOT EXISTS backports_renamed AS
         SELECT b.name AS branch, f.name AS file, nf.name AS new_file, ci.name AS sha
         FROM backports bp
         JOIN branches b ON b.id = bp.branch_id
@@ -99,7 +99,7 @@ def create_db():
         JOIN files nf ON ch.to_id = nf.id
         ;
 
-        CREATE VIEW backports_removed AS
+        CREATE VIEW IF NOT EXISTS backports_removed AS
         SELECT b.name AS branch, f.name AS file, ci.name AS sha
         FROM backports bp
         JOIN branches b ON b.id = bp.branch_id
@@ -108,19 +108,19 @@ def create_db():
         JOIN files f ON f.id = ch.from_id AND ch.to_id IS NULL
         ;
 
-        CREATE VIEW added AS
+        CREATE VIEW IF NOT EXISTS added AS
         SELECT branch, file, sha, 'base' AS source FROM base_added
         UNION ALL
         SELECT branch, file, sha, 'backport' AS source FROM backports_added
         ;
 
-        CREATE VIEW renamed AS
+        CREATE VIEW IF NOT EXISTS renamed AS
         SELECT branch, file, new_file, sha, 'base' AS source FROM base_renamed
         UNION ALL
         SELECT branch, file, new_file, sha, 'backport' AS source FROM backports_renamed
         ;
 
-        CREATE VIEW removed AS
+        CREATE VIEW IF NOT EXISTS removed AS
         SELECT branch, file, sha, 'base' AS source FROM base_removed
         UNION ALL
         SELECT branch, file, sha, 'backport' AS source FROM backports_removed
