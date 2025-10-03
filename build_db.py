@@ -107,6 +107,18 @@ def create_db():
         JOIN commits ci ON ci.id = ch.commit_id
         JOIN files f ON f.id = ch.from_id AND ch.to_id IS NULL
         ;
+
+        CREATE VIEW added AS
+        SELECT branch, file, sha, 'base' AS source FROM base_added
+        UNION ALL
+        SELECT branch, file, sha, 'backport' AS source FROM backports_added
+        ;
+
+        CREATE VIEW removed AS
+        SELECT branch, file, sha, 'base' AS source FROM base_removed
+        UNION ALL
+        SELECT branch, file, sha, 'backport' AS source FROM backports_removed
+        ;
         ''')
 
 def store_array_into_db(query, array):
