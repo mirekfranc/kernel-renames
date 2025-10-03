@@ -96,7 +96,7 @@ def create_db():
         JOIN changes ch ON ch.commit_id = bp.commit_id
         JOIN commits ci ON ci.id = ch.commit_id
         JOIN files f ON f.id = ch.from_id AND ch.to_id IS NOT NULL
-        JOIN files nf ON ch.to_add = nf.id
+        JOIN files nf ON ch.to_id = nf.id
         ;
 
         CREATE VIEW backports_removed AS
@@ -112,6 +112,12 @@ def create_db():
         SELECT branch, file, sha, 'base' AS source FROM base_added
         UNION ALL
         SELECT branch, file, sha, 'backport' AS source FROM backports_added
+        ;
+
+        CREATE VIEW renamed AS
+        SELECT branch, file, new_file, sha, 'base' AS source FROM base_renamed
+        UNION ALL
+        SELECT branch, file, new_file, sha, 'backport' AS source FROM backports_renamed
         ;
 
         CREATE VIEW removed AS
