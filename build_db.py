@@ -58,7 +58,7 @@ def create_db():
         JOIN changes ch ON ch.to_id = f.id AND ch.from_id IS NULL
         JOIN commits ci ON ci.id = ch.commit_id
         JOIN tags t ON t.id = ch.tag_id
-        JOIN branches b ON b.id = t.id
+        JOIN branches b ON b.tag_id = t.id
         ;
 
         CREATE VIEW IF NOT EXISTS base_renamed AS
@@ -68,7 +68,7 @@ def create_db():
         JOIN files nf ON ch.to_id = nf.id
         JOIN commits ci ON ci.id = ch.commit_id
         JOIN tags t ON t.id = ch.tag_id
-        JOIN branches b ON b.id = t.id
+        JOIN branches b ON b.tag_id = t.id
         ;
 
         CREATE VIEW IF NOT EXISTS base_removed AS
@@ -77,7 +77,7 @@ def create_db():
         JOIN changes ch ON ch.to_id IS NULL AND ch.from_id = f.id
         JOIN commits ci ON ci.id = ch.commit_id
         JOIN tags t ON t.id = ch.tag_id
-        JOIN branches b ON b.id = t.id
+        JOIN branches b ON b.tag_id = t.id
         ;
 
         CREATE VIEW backports_added AS
