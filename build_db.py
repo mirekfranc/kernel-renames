@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-import requests, os, sys, re, subprocess, sqlite3
+import requests, os, sys, re, subprocess, sqlite3, re
 import pygit2 as git
 from itertools import groupby, chain
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -7,6 +7,7 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 HASH_PATTERN = re.compile(r"Git-commit:[ \t]*([0-9a-f]{9,40})[ \t]*")
 CMD = f'log --oneline --raw --no-merges'
 BRANCHES_CONF = 'https://kerncvs.suse.de/branches.conf'
+MERGES_PATTERN = re.compile(r'[ \t]merge:-?([^ ]+)')
 BRANCH_BLACKLIST = ['vanilla', 'linux-next']
 DB_NAME = 'changes.sqlite'
 BIG_BANG = '1da177e4c3f41524e886b7f1b8a0c1fc7321cac2'
@@ -242,14 +243,18 @@ def fetch_branches_conf():
     return None
 
 def get_list_of_branches(branches_conf):
-    ret = []
+    ret = dict()
     for l in branches_conf.split('\n'):
         if not l or l.startswith('#') or l.startswith(' ') or ':' not in l or 'build' not in l:
             continue
         branch_name = l.split(':')[0]
         if branch_name in BRANCH_BLACKLIST:
             continue
-        ret.append(branch_name)
+        ret[branch_name] = ret.get(branch_name, set())
+        for b in re.findall(MERGES_PATTERN, l):
+            if b not in BRANCH_BLACKLIST:
+                ret[branch_name] = ret.get(branch_name, set())
+                ret[branch_name].add(b)
     return ret
 
 def key_function(s):
@@ -331,7 +336,7 @@ def main():
     create_db()
 
     branches_conf = fetch_branches_conf()
-    branches = []
+    branches = dict()
     if branches_conf:
         branches = get_list_of_branches(branches_conf)
 
@@ -339,7 +344,7 @@ def main():
     if not kpath:
         print("Cannot get KSOURCE_GIT", file=sys.stderr)
     krepo = git.Repository(kpath)
-    tags = get_tags_from_ksource_tree(branches, krepo)
+    tags = get_tags_from_ksource_tree(branches.keys(), krepo)
 
     pure_tags = sorted([ tags[k] for k in tags.keys() ], key=key_function)
     pure_tags = [ 'v' + p for p in pure_tags ]
@@ -364,7 +369,7 @@ def main():
             store_files_into_db(files)
             store_changes_into_db(many)
 
-    commits_per_branch = get_commits_per_branch(branches, krepo, lrepo)
+    commits_per_branch = get_commits_per_branch(branches.keys(), krepo, lrepo)
     commits = get_commits()
     for branch, hashes in commits_per_branch.items():
         backports = [(h, branch) for h in hashes if h in commits ]
