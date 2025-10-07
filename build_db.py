@@ -20,6 +20,7 @@ def create_db():
         CREATE TABLE IF NOT EXISTS branches (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT UNIQUE NOT NULL,
+        ancestors INTEGER NOT NULL,
         tag_id INTEGER NOT NULL,
         FOREIGN KEY (tag_id) REFERENCES tags(id)
         );
@@ -50,6 +51,15 @@ def create_db():
         FOREIGN KEY (to_id) REFERENCES files(id),
         FOREIGN KEY (tag_id) REFERENCES tags(id)
         );
+
+        CREATE VIEW IF NOT EXISTS branch_sort AS
+        SELECT b.name AS branch, t.name AS tag, b.id AS branch_id, t.id AS tag_id
+        FROM branches b
+        JOIN tags t ON t.id = b.tag_id
+        ORDER BY
+        b.tag_id DESC,
+        b.ancestors ASC
+        ;
 
         CREATE VIEW IF NOT EXISTS base_added AS
         SELECT b.name AS branch, f.name AS file, ci.name AS sha
@@ -147,9 +157,9 @@ def store_tags_into_db(uniq_tags):
     query = 'insert into tags (name) VALUES (?)'
     store_array_into_db(query, many)
 
-def store_branches_into_db(tags):
-    many = [(k, f'v{v}') for k, v in tags.items()]
-    query = 'insert into branches (name, tag_id) VALUES (?, (select id from tags where name = ?))'
+def store_branches_into_db(tags, number_of_ancestors):
+    many = [(k, number_of_ancestors[k], f'v{v}') for k, v in tags.items()]
+    query = 'insert into branches (name, ancestors, tag_id) VALUES (?, ?, (select id from tags where name = ?))'
     store_array_into_db(query, many)
 
 def store_commits_into_db(many):
@@ -253,6 +263,18 @@ def get_list_of_branches(branches_conf):
                 ret[branch_name].add(b)
     return ret
 
+def transitive_closure(branches):
+    closure = { (k, e) for k in branches.keys() for e in branches[k] }
+    while True:
+        tmp = { (x, w) for x, y in closure for q, w in closure if q == y }
+        closure_tmp = closure | tmp
+        if closure_tmp == closure:
+            break
+        closure = closure_tmp
+    for k, v in closure:
+        branches[k].add(v)
+    return { k: len(v) for k, v in branches.items() }
+
 def key_function(s):
     arr = re.split(r'[.-]', s)[:3]
     arr[0] = int(arr[0])
@@ -330,10 +352,10 @@ def build_db():
     create_db()
 
     branches_conf = fetch_branches_conf()
-    branches = dict()
-    if branches_conf:
-        branches = get_list_of_branches(branches_conf)
-
+    if not branches_conf:
+        print('no branches.conf', file=sys.stderr)
+        sys.exit(1)
+    branches = get_list_of_branches(branches_conf)
     kpath = os.getenv('KSOURCE_GIT', None)
     if not kpath:
         print("Cannot get KSOURCE_GIT", file=sys.stderr)
@@ -346,7 +368,8 @@ def build_db():
 
     store_tags_into_db(uniq_tags)
     uniq_tags.append('master')
-    store_branches_into_db(tags)
+    number_of_ancestors = transitive_closure(branches)
+    store_branches_into_db(tags, number_of_ancestors)
 
     lpath = os.getenv('LINUX_GIT', None)
     if not lpath:
