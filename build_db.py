@@ -133,11 +133,14 @@ def store_array_into_db(query, array):
         cursor.executemany(query, array)
         conn.commit()
 
-def get_commits():
+def do_query(query):
     with sqlite3.connect(DB_NAME) as conn:
         conn.execute('PRAGMA foreign_keys = ON')
         cursor = conn.cursor()
-        return { x for (x,) in cursor.execute('SELECT name FROM commits;') }
+        return { x for x in cursor.execute(query) }
+
+def get_commits():
+    return { x for (x,) in do_query('SELECT name FROM commits;') }
 
 def store_tags_into_db(uniq_tags):
     many = [(t,) for t in uniq_tags]
@@ -384,8 +387,10 @@ def handle_commit(commit):
         patch = lrepo.diff(lrepo.revparse_single(commit + "^"), lrepo.revparse_single(commit)).patch
         files = list({ l[6:] for l in patch.splitlines() if l.startswith('+++') or l.startswith('---') })
     # debug
-    for f in files:
-        print(f)
+    quoted_files = [ f"'{f}'" for f in files ]
+    file_ids = do_query(f"SELECT * FROM files f WHERE f.name IN ({', '.join(quoted_files)})")
+    for l in file_ids:
+        print(*l)
 
 def is_valid_sha(sha):
     if len(sha) != 40:
