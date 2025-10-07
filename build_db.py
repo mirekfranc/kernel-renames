@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-import requests, os, sys, re, subprocess, sqlite3, re
+import requests, os, sys, re, subprocess, sqlite3, re, argparse
 import pygit2 as git
 from itertools import groupby, chain
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -12,8 +12,6 @@ BRANCH_BLACKLIST = ['vanilla', 'linux-next']
 DB_NAME = 'changes.sqlite'
 BIG_BANG = '1da177e4c3f41524e886b7f1b8a0c1fc7321cac2'
 BLACKLIST = 'Dell Inc.,XPS 13 9300' # weird file with spaces nobody gives a fig about
-
-# db ###########################################################################
 
 def create_db():
     with sqlite3.connect(DB_NAME) as conn:
@@ -176,8 +174,6 @@ def store_backports_into_db(many):
     )'''
     store_array_into_db(query, many)
 
-# compare two references #######################################################
-
 def get_renames_with_score_or_none(l):
     rr = l.split(' ')[4].split('\t')
     if rr[0].startswith('R'):
@@ -198,8 +194,7 @@ def between(begin, end, lpath):
         cmd = f'{core_cmd} {begin}..{end}'
     else:
         cmd = f'{core_cmd} {end}'
-    # debug
-    print(cmd)
+    print(cmd, file=sys.stderr)
     res = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
     lrepo = git.Repository(lpath)
     hash = None
@@ -225,8 +220,6 @@ def between(begin, end, lpath):
     filesy = [f for _, _, _, f, _ in many ]
     files = {(f,) for f, _ in groupby(chain(filesx, filesy))}
     return (files, many)
-
-# get tags and branches ########################################################
 
 def fetch_branches_conf():
     try:
@@ -329,9 +322,7 @@ def fetch_root_tree_files(lrepo, tag):
 def prepare_tags_for_parallel_partition(uniq_tags):
     return [('', uniq_tags[0])] + [ (f, s) for f, s in zip(uniq_tags, uniq_tags[1:]) ]
 
-# main function ################################################################
-
-def main():
+def build_db():
     os.path.isfile(DB_NAME) and os.rename(DB_NAME, DB_NAME + '.OLD')
     create_db()
 
@@ -374,5 +365,50 @@ def main():
     for branch, hashes in commits_per_branch.items():
         backports = [(h, branch) for h in hashes if h in commits ]
         store_backports_into_db(backports)
+
+def handle_commit(commit):
+    lpath = os.getenv('LINUX_GIT', None)
+    if not lpath:
+        print("Cannot get LINUX_GIT", file=sys.stderr)
+    lrepo = git.Repository(lpath)
+    files = []
+    if commit == BIG_BANG:
+        try:
+            tree_index = git.Index()
+            tree_index.read_tree(lrepo.revparse_single(commit).tree)
+            files = [ t.path for t in tree_index ]
+        except Exception as e:
+            print(color_format(T_RED, f'branch {branch} probably does not exist: {e}'), file=sys.stderr)
+            sys.exit(1)
+    else:
+        patch = lrepo.diff(lrepo.revparse_single(commit + "^"), lrepo.revparse_single(commit)).patch
+        files = list({ l[6:] for l in patch.splitlines() if l.startswith('+++') or l.startswith('---') })
+    # debug
+    for f in files:
+        print(f)
+
+def is_valid_sha(sha):
+    if len(sha) != 40:
+        return False
+    for c in sha:
+        if c not in "0123456789abcdefABCDEF":
+            return False
+    return True
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Kernel Renames Tracking")
+    parser.add_argument("-D", "--build-db", help=f"build database: {DB_NAME}", action="store_true", default=False)
+    parser.add_argument("-c", "--commit", help="query files from the commits", default=None, type=str)
+    return parser.parse_args()
+
+def main():
+    args = parse_args()
+    if args.build_db:
+        build_db()
+    if args.commit:
+        if not is_valid_sha(args.commit):
+            print(f"\"{args.commit}\" is not a valid sha", file=sys.stderr)
+            sys.exit(1)
+        handle_commit(args.commit)
 
 main()
