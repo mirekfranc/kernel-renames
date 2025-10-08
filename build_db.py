@@ -5,6 +5,7 @@ from itertools import groupby, chain
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
 HASH_PATTERN = re.compile(r"Git-commit:[ \t]*([0-9a-f]{9,40})[ \t]*")
+CVE_PATTERN = re.compile(r"CVE-[0-9]{4}-[0-9]{4,}")
 CMD = f'log --oneline --raw --no-merges'
 BRANCHES_CONF = 'https://kerncvs.suse.de/branches.conf'
 MERGES_PATTERN = re.compile(r'[ \t]merge:-?([^ ]+)')
@@ -347,6 +348,33 @@ def fetch_root_tree_files(lrepo, tag):
 def prepare_tags_for_parallel_partition(uniq_tags):
     return [('', uniq_tags[0])] + [ (f, s) for f, s in zip(uniq_tags, uniq_tags[1:]) ]
 
+def fetch_cves(cves, branch):
+    path_to_repo = os.getenv('VULNS_GIT', None)
+    if not path_to_repo:
+        print("Cannnot get VULNS_GIT", file=sys.stderr)
+        sys.exit(1)
+    repo = git.Repository(path_to_repo)
+    tree_index = git.Index()
+    try:
+        tree_index.read_tree(repo.revparse_single(branch).tree)
+    except Exception as e:
+        print(f'branch {branch} probably does not exist: {e}', file=sys.stderr)
+        sys.exit(1)
+    def path_contains_one_of(path, elements):
+        for e in elements:
+            if e in path:
+                return True
+        return False
+    def get_cve(s):
+        m = re.search(CVE_PATTERN, s)
+        return m.group(0) if m else ''
+    path_filtered_tree_data = [ t for t in tree_index if t.path.startswith('cve/') and t.path.endswith('.sha1') and path_contains_one_of(t.path, cves) ]
+    published_data = [ (t.path, t.id) for t in path_filtered_tree_data if t.path.startswith('cve/published/') ]
+    rejected_data = [ (t.path, t.id) for t in path_filtered_tree_data if t.path.startswith('cve/rejected/') ]
+    return ( { get_cve(t[0]): repo[t[1]].data.decode('ascii').rstrip().split() for t in published_data },
+             { get_cve(t[0]): repo[t[1]].data.decode('ascii').rstrip().split() for t in rejected_data })
+
+
 def build_db():
     os.path.isfile(DB_NAME) and os.rename(DB_NAME, DB_NAME + '.OLD')
     create_db()
@@ -392,10 +420,22 @@ def build_db():
         backports = [(h, branch) for h in hashes if h in commits ]
         store_backports_into_db(backports)
 
+def is_valid_sha(sha):
+    if len(sha) != 40:
+        return False
+    for c in sha:
+        if c not in "0123456789abcdefABCDEF":
+            return False
+    return True
+
 def handle_commit(commit):
+    if not is_valid_sha(commit):
+        print(f"\"{commit}\" is not a valid sha", file=sys.stderr)
+        sys.exit(1)
     lpath = os.getenv('LINUX_GIT', None)
     if not lpath:
         print("Cannot get LINUX_GIT", file=sys.stderr)
+        sys.exit(1)
     lrepo = git.Repository(lpath)
     files = []
     if commit == BIG_BANG:
@@ -415,18 +455,18 @@ def handle_commit(commit):
     for l in file_ids:
         print(*l)
 
-def is_valid_sha(sha):
-    if len(sha) != 40:
-        return False
-    for c in sha:
-        if c not in "0123456789abcdefABCDEF":
-            return False
-    return True
+def handle_cve(cve):
+    published, rejected = fetch_cves([cve], 'origin/master')
+    for k, v in published.items():
+        print(k, " => ", v)
+        for c in v:
+            handle_commit(c)
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Kernel Renames Tracking")
     parser.add_argument("-D", "--build-db", help=f"build database: {DB_NAME}", action="store_true", default=False)
     parser.add_argument("-c", "--commit", help="query files from the commits", default=None, type=str)
+    parser.add_argument("-v", "--cve", help="query files from the CVE", default=None, type=str)
     return parser.parse_args()
 
 def main():
@@ -434,9 +474,8 @@ def main():
     if args.build_db:
         build_db()
     if args.commit:
-        if not is_valid_sha(args.commit):
-            print(f"\"{args.commit}\" is not a valid sha", file=sys.stderr)
-            sys.exit(1)
         handle_commit(args.commit)
+    if args.cve:
+        handle_cve(args.cve)
 
 main()
