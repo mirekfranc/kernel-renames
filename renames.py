@@ -148,7 +148,7 @@ def do_query(query):
     with sqlite3.connect(DB_NAME) as conn:
         conn.execute('PRAGMA foreign_keys = ON')
         cursor = conn.cursor()
-        return { x for x in cursor.execute(query) }
+        return [ x for x in cursor.execute(query) ]
 
 def get_commits():
     return { x for (x,) in do_query('SELECT name FROM commits;') }
@@ -187,6 +187,22 @@ def store_backports_into_db(many):
     (select id from branches where name = ?)
     )'''
     store_array_into_db(query, many)
+
+class Db:
+    def __init__(self):
+        self.tags_by_id =  { id: name for id, name in do_query('SELECT * FROM tags;') }
+        self.commits_by_id = { id: name for id, name in do_query('SELECT * FROM commits;') }
+        self.changes_by_id = { id: (from_id, to_id, commit_id, tag_id, score)
+                               for id, from_id, to_id, commit_id, tag_id, score
+                               in do_query('SELECT id, from_id, to_id, commit_id, tag_id, score FROM changes;') }
+
+    def file_history(self, f):
+        pivot = None
+        for k, v in self.changes_by_id.items():
+            if v[1] == f:
+                pivot = k
+                break
+        print(self.commits_by_id[v[2]], " ", self.tags_by_id[v[3]])
 
 def get_renames_with_score_or_none(l):
     rr = l.split(' ')[4].split('\t')
@@ -428,7 +444,7 @@ def is_valid_sha(sha):
             return False
     return True
 
-def handle_commit(commit):
+def handle_commit(commit, db):
     if not is_valid_sha(commit):
         print(f"\"{commit}\" is not a valid sha", file=sys.stderr)
         sys.exit(1)
@@ -454,13 +470,14 @@ def handle_commit(commit):
     file_ids = do_query(f"SELECT * FROM files f WHERE f.name IN ({', '.join(quoted_files)})")
     for l in file_ids:
         print(*l)
+        db.file_history(l[0])
 
-def handle_cve(cve):
+def handle_cve(cve, db):
     published, rejected = fetch_cves([cve], 'origin/master')
     for k, v in published.items():
         print(k, " => ", v)
         for c in v:
-            handle_commit(c)
+            handle_commit(c, db)
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Kernel Renames Tracking")
@@ -473,9 +490,10 @@ def main():
     args = parse_args()
     if args.build_db:
         build_db()
+    db = Db()
     if args.commit:
-        handle_commit(args.commit)
+        handle_commit(args.commit, db)
     if args.cve:
-        handle_cve(args.cve)
+        handle_cve(args.cve, db)
 
 main()
